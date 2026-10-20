@@ -1,0 +1,9 @@
+model,threshold,actual_class,predicted_label,count
+Logistic Regression,0.5,0,0,55518
+Logistic Regression,0.5,0,1,1334
+Logistic Regression,0.5,1,0,12
+Logistic Regression,0.5,1,1,84
+Random Forest,0.5,0,0,56850
+Random Forest,0.5,0,1,2
+Random Forest,0.5,1,0,28
+Random Forest,0.5,1,1,68

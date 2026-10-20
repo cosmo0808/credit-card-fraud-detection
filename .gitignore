@@ -1,0 +1,41 @@
+# Raw datasets (keep the directory placeholder only)
+/data/*
+!/data/.gitkeep
+
+# Row-level model scores are generated and unnecessary for the public portfolio
+/outputs/scored_transactions.csv
+/outputs/*.joblib
+/outputs/*.parquet
+
+# Python environments, caches, and bytecode
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Jupyter temporary files
+.ipynb_checkpoints/
+
+# Temporary work and logs
+/work/
+*.log
+*.tmp
+
+# Credentials and local secrets
+.env
+.env.*
+!.env.example
+secrets/
+credentials.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.token
+
+# Operating system metadata
+.DS_Store
+Thumbs.db

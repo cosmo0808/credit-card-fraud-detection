@@ -1,0 +1,148 @@
+/*
+Power BI table names expected from data_dictionary.md:
+Transactions, ScoredHoldout, ModelMetrics, ConfusionCounts, ThresholdValidation.
+DimModel is created below from the actual shared `model` column.
+Do not relate Transactions to the model tables. Page 1 uses full historical data;
+Page 2 uses test or validation tables with explicit scope labels.
+*/
+
+/* Calculated dimension: valid shared model key across three model fact tables. */
+DimModel =
+DISTINCT (
+    UNION (
+        SELECTCOLUMNS ( ModelMetrics, "model", ModelMetrics[model] ),
+        SELECTCOLUMNS ( ScoredHoldout, "model", ScoredHoldout[model] ),
+        SELECTCOLUMNS ( ConfusionCounts, "model", ConfusionCounts[model] ),
+        SELECTCOLUMNS ( ThresholdValidation, "model", ThresholdValidation[model] )
+    )
+)
+
+/* Optional calculated columns for Transactions. Set AmountBandSort to Sort by Column for AmountBand. */
+Actual Class Label =
+SWITCH ( Transactions[Class], 0, "Legitimate", 1, "Fraud", "Unknown" )
+
+AmountBandSort =
+SWITCH ( TRUE (),
+    Transactions[Amount] < 10, 1,
+    Transactions[Amount] < 100, 2,
+    Transactions[Amount] < 500, 3,
+    4
+)
+
+AmountBand =
+SWITCH ( Transactions[AmountBandSort],
+    1, "0-<10",
+    2, "10-<100",
+    3, "100-<500",
+    4, "500+"
+)
+
+ElapsedHour = INT ( DIVIDE ( Transactions[Time], 3600 ) )
+
+/* Page 1: full historical dataset measures. */
+Total Transactions (Full Dataset) = COUNTROWS ( Transactions )
+
+Fraudulent Transactions (Full Dataset) =
+CALCULATE ( [Total Transactions (Full Dataset)], Transactions[Class] = 1 )
+
+Legitimate Transactions (Full Dataset) =
+CALCULATE ( [Total Transactions (Full Dataset)], Transactions[Class] = 0 )
+
+Fraud Rate (Full Dataset) =
+DIVIDE ( [Fraudulent Transactions (Full Dataset)], [Total Transactions (Full Dataset)] )
+
+Fraud Transaction Amount (Full Dataset) =
+CALCULATE ( SUM ( Transactions[Amount] ), Transactions[Class] = 1 )
+
+Average Transaction Amount (Full Dataset) =
+AVERAGE ( Transactions[Amount] )
+
+Transaction Mix by Amount Band =
+DIVIDE (
+    COUNTROWS ( Transactions ),
+    CALCULATE ( COUNTROWS ( Transactions ), REMOVEFILTERS ( Transactions[AmountBand] ) )
+)
+
+/* Additional display columns for Page 2. */
+Actual Class Label =  /* Create this column on ScoredHoldout */
+SWITCH ( ScoredHoldout[actual_class], 0, "Legitimate", 1, "Fraud", "Unknown" )
+
+Probability Bin Lower =  /* Create this column on ScoredHoldout */
+MIN ( 0.95, FLOOR ( ScoredHoldout[fraud_probability], 0.05 ) )
+
+Probability Bin Label =  /* Create this column on ScoredHoldout */
+FORMAT ( ScoredHoldout[Probability Bin Lower], "0%" )
+    & "-"
+    & FORMAT ( MIN ( ScoredHoldout[Probability Bin Lower] + 0.05, 1 ), "0%" )
+
+Actual Class Label =  /* Create this column on ConfusionCounts */
+SWITCH ( ConfusionCounts[actual_class], 0, "Legitimate", 1, "Fraud", "Unknown" )
+
+Predicted Class Label =  /* Create this column on ConfusionCounts */
+SWITCH ( ConfusionCounts[predicted_label], 0, "Legitimate", 1, "Fraud", "Unknown" )
+
+/* Page 2: aggregate values from ModelMetrics, scoped to one model at a time.
+   Put DimModel[model] in a single-select slicer; these return BLANK if ambiguous.
+   The guard uses the measure's fact table so a direct model field also works. */
+Test Transactions =
+IF ( HASONEVALUE ( ModelMetrics[model] ), MAX ( ModelMetrics[evaluation_count] ) )
+
+Test Fraud Prevalence =
+IF ( HASONEVALUE ( ModelMetrics[model] ), MAX ( ModelMetrics[fraud_prevalence] ) )
+
+True Positives (Test) =
+IF ( HASONEVALUE ( ModelMetrics[model] ), MAX ( ModelMetrics[true_positives] ) )
+
+False Positives (Test) =
+IF ( HASONEVALUE ( ModelMetrics[model] ), MAX ( ModelMetrics[false_positives] ) )
+
+False Negatives (Test) =
+IF ( HASONEVALUE ( ModelMetrics[model] ), MAX ( ModelMetrics[false_negatives] ) )
+
+True Negatives (Test) =
+IF ( HASONEVALUE ( ModelMetrics[model] ), MAX ( ModelMetrics[true_negatives] ) )
+
+Test Fraud Count =
+[True Positives (Test)] + [False Negatives (Test)]
+
+Test Precision =
+DIVIDE ( [True Positives (Test)], [True Positives (Test)] + [False Positives (Test)] )
+
+Test Recall =
+DIVIDE ( [True Positives (Test)], [True Positives (Test)] + [False Negatives (Test)] )
+
+Test F1-score =
+DIVIDE ( 2 * [Test Precision] * [Test Recall], [Test Precision] + [Test Recall] )
+
+Test Accuracy =
+IF ( HASONEVALUE ( ModelMetrics[model] ), MAX ( ModelMetrics[accuracy] ) )
+
+Test Average Precision =
+IF ( HASONEVALUE ( ModelMetrics[model] ), MAX ( ModelMetrics[average_precision] ) )
+
+Test ROC-AUC =
+IF ( HASONEVALUE ( ModelMetrics[model] ), MAX ( ModelMetrics[roc_auc] ) )
+
+/* Confusion matrix visual uses ConfusionCounts[count] directly or this measure. */
+Confusion Matrix Count (Test) =
+IF ( HASONEVALUE ( ConfusionCounts[model] ), SUM ( ConfusionCounts[count] ) )
+
+/* Model score table: apply a single model selection before using row counts. */
+Scored Holdout Rows (Selected Model) =
+IF ( HASONEVALUE ( ScoredHoldout[model] ), COUNTROWS ( ScoredHoldout ) )
+
+Scored Holdout Fraud Rows (Selected Model) =
+IF (
+    HASONEVALUE ( ScoredHoldout[model] ),
+    CALCULATE ( COUNTROWS ( ScoredHoldout ), ScoredHoldout[actual_class] = 1 )
+)
+
+/* Validation-only measures. Use these only with ThresholdValidation visuals. */
+Validation True Positives = IF ( HASONEVALUE ( ThresholdValidation[model] ), SUM ( ThresholdValidation[true_positives] ) )
+Validation False Positives = IF ( HASONEVALUE ( ThresholdValidation[model] ), SUM ( ThresholdValidation[false_positives] ) )
+Validation False Negatives = IF ( HASONEVALUE ( ThresholdValidation[model] ), SUM ( ThresholdValidation[false_negatives] ) )
+Validation True Negatives = IF ( HASONEVALUE ( ThresholdValidation[model] ), SUM ( ThresholdValidation[true_negatives] ) )
+Validation Precision = DIVIDE ( [Validation True Positives], [Validation True Positives] + [Validation False Positives] )
+Validation Recall = DIVIDE ( [Validation True Positives], [Validation True Positives] + [Validation False Negatives] )
+Validation F1-score = DIVIDE ( 2 * [Validation Precision] * [Validation Recall], [Validation Precision] + [Validation Recall] )
+Validation Flagged Transactions = [Validation True Positives] + [Validation False Positives]
